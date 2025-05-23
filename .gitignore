@@ -1,0 +1,37 @@
+# LaTeX temporary files
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.fls
+*.fdb_latexmk
+*.bbl
+*.bcf
+*.blg
+*.run.xml
+
+# PDF output (optional - uncomment if you want to exclude PDFs)
+# *.pdf
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Project-specific ignores
+raw_splits/
+chatgpt_script.py
+raw_input.txt
+Legacy Report1.pdf
+skipped_entries.log
+
+# Input/output files (keeping main ones)
+# Uncomment these if you want to ignore raw input/output files except for the primary ones
+raw_input*.txt
+parsed_output*.tex
+!parsed_output_new.tex
+
+# System files
+.DS_Store
+Thumbs.db 
