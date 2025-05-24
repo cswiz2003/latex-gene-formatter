@@ -2,6 +2,52 @@ import re
 import sys
 import os
 
+class PersonRegistry:
+    """Track person names and their IDs for hyperlinking."""
+    def __init__(self):
+        self.name_to_id = {}
+        self.normalized_to_id = {}  # Normalized versions for fuzzy matching
+        
+    def register_person(self, person_id, name):
+        """Register a person with their ID and name."""
+        self.name_to_id[name.strip()] = person_id
+        
+        # Create normalized versions for better matching
+        normalized = self._normalize_name(name)
+        self.normalized_to_id[normalized] = person_id
+        
+        # Handle names with middle initials by creating versions without them
+        if '.' in name:
+            simplified = re.sub(r'\s+[A-Z]\.\s+', ' ', name)
+            if simplified != name:
+                self.normalized_to_id[self._normalize_name(simplified)] = person_id
+    
+    def get_person_id(self, name):
+        """Get the ID for a person if registered."""
+        # First try exact match
+        if name.strip() in self.name_to_id:
+            return self.name_to_id[name.strip()]
+            
+        # Then try normalized match
+        normalized = self._normalize_name(name)
+        if normalized in self.normalized_to_id:
+            return self.normalized_to_id[normalized]
+            
+        # Try without middle initials
+        if '.' in name:
+            simplified = re.sub(r'\s+[A-Z]\.\s+', ' ', name)
+            if self._normalize_name(simplified) in self.normalized_to_id:
+                return self.normalized_to_id[self._normalize_name(simplified)]
+                
+        return None
+    
+    def _normalize_name(self, name):
+        """Normalize a name for fuzzy matching."""
+        return name.lower().strip()
+
+# Create a global person registry
+person_registry = PersonRegistry()
+
 def hyperlink(name):
     """Format a name with hyperlink appearance."""
     # Remove angle brackets around links
@@ -12,10 +58,26 @@ def hyperlink(name):
         return name
         
     parts = [n.strip() for n in name.split(" and ")]
-    return " and ".join(f"\\href{{#}}{{\\textcolor{{accent}}{{\\textbf{{\\underline{{{part}}}}}}}}}" for part in parts)
+    hyperlinked_parts = []
+    
+    for part in parts:
+        # Check if we know this person's ID
+        person_id = person_registry.get_person_id(part)
+        
+        if person_id:
+            # Create a proper hyperlink to the person's entry
+            hyperlinked_parts.append(f"\\hyperlink{{person{person_id}}}{{\\textcolor{{accent}}{{\\textbf{{\\underline{{{part}}}}}}}}}")
+        else:
+            # Use the original styling with no functional link
+            hyperlinked_parts.append(f"\\href{{#}}{{\\textcolor{{accent}}{{\\textbf{{\\underline{{{part}}}}}}}}}")
+    
+    return " and ".join(hyperlinked_parts)
 
 def format_person_block(entry_number, name, bio, marriage, children, generation=None):
     """Format a single LaTeX person block."""
+    # Register this person in the registry
+    person_registry.register_person(entry_number, name)
+    
     # Add generation title if provided and it's a new generation
     block = ""
     if generation:
@@ -27,27 +89,35 @@ def format_person_block(entry_number, name, bio, marriage, children, generation=
         block += f"\\marriage{{{marriage}}}\n"
     
     if children:
+        # Use proper commands for singular/plural children heading
         if len(children) == 1:
-            block += "\\childrenheading\n"
+            block += "\\childrenheadingsingular\n"
         else:
-            block += "\\childrenheading\n".replace("child", "children").replace("was:", "were:")
+            block += "\\childrenheadingplural\n"
         
         roman_numerals = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x', 'xi', 'xii', 'xiii', 'xiv', 'xv']
         
         for idx, (child_number, child_name, has_roman, is_linked) in enumerate(children):
             roman = roman_numerals[min(idx, len(roman_numerals)-1)]
             
-            if is_linked:
+            # Only use childentrylinked for children with actual reference numbers
+            if is_linked and child_number != "--":
                 # This is a hyperlinked child with badge
                 block += f"\\childentrylinked{{{child_number}}}{{{roman}}}{{{child_name}}}\n"
             else:
-                # Extract name part for bolding (before any descriptive text)
-                name_parts = child_name.split(',', 1)
-                if len(name_parts) > 1:
-                    name_part, desc_part = name_parts
-                    block += f"\\childentryplain{{{name_part.strip()}}}{{{roman}}}{{{', ' + desc_part.strip()}}}\n"
+                # For children without reference numbers but with descriptions
+                if "was born" in child_name or "died" in child_name:
+                    # Use childentry for regular entries without splitting
+                    block += f"\\childentry{{{''}}}{{{roman}. {child_name}}}\n"
                 else:
-                    block += f"\\childentry{{{''}}}{{{child_name}}}\n"
+                    # Extract name part for bolding (before any descriptive text)
+                    name_parts = child_name.split(',', 1)
+                    if len(name_parts) > 1:
+                        name_part, desc_part = name_parts
+                        block += f"\\childentryplain{{{name_part.strip()}}}{{{roman}}}{{{', ' + desc_part.strip()}}}\n"
+                    else:
+                        # Use childentry for regular entries without splitting
+                        block += f"\\childentry{{{''}}}{{{roman}. {child_name}}}\n"
     
     # Add divider line after the entry
     if not generation:
@@ -57,9 +127,21 @@ def format_person_block(entry_number, name, bio, marriage, children, generation=
 
 def parse_genealogy_data(text):
     """Parse raw genealogy text into LaTeX blocks."""
+    # Reset the person registry for a new parsing session
+    global person_registry
+    person_registry = PersonRegistry()
+    
     # Use a more robust pattern to identify entry start points
     entry_pattern = r"(?:^|\n)(\d{1,4})\.[\s]+([^,\n]+)(?:,\s*|\s*\n)(.+?)(?=(?:\n\d{1,4}\.\s)|$)"
     entries = re.findall(entry_pattern, text, re.DOTALL)
+    
+    # First pass - register all persons with their IDs
+    print("First pass: registering all persons...")
+    for entry_number, name, _ in entries:
+        person_registry.register_person(entry_number.strip(), name.strip())
+        
+    # Second pass - process entries with proper hyperlinks
+    print("Second pass: creating formatted entries...")
     
     person_blocks = []
     skipped_entries = []
@@ -103,11 +185,19 @@ def parse_genealogy_data(text):
                 skipped_entries.append((entry_number, name, "No content"))
                 continue
 
+            if entry_number == "2":  # Special logging for entry #2
+                print(f"\nProcessing entry {entry_number}. {name}")
+                print(f"Found {len(lines)} lines to process")
+                for l in lines:
+                    print(f"  Line: {l}")
+
             # Process each line
-            for line in lines:
-                # Check for children section marker
-                if re.search(r'^(?:(?:The )?[Cc]hild(?:ren)?|The following child(?:ren)?) (?:from|of) this marriage', line):
+            for line_index, line in enumerate(lines):
+                # Check for children section marker - more inclusive pattern
+                if re.search(r'^(?:(?:The )?[Cc]hild(?:ren)?|(?:The )?[Cc]hildren|The following child(?:ren)?) (?:from|of) this marriage', line):
                     in_children = True
+                    if entry_number == "2":  # Special logging
+                        print(f"  Found children marker: {line}")
                     continue
                 # Check for special sections to skip or include in bio
                 elif line.lower().startswith(("general notes:", "obituary:")):
@@ -115,7 +205,25 @@ def parse_genealogy_data(text):
                     continue
                 # Check for marriage line (only before children section)
                 elif " married " in line.lower() and not in_children:
-                    marriage = line
+                    # Check if the next line might contain the continuation of the marriage info
+                    if line_index + 1 < len(lines):
+                        next_line = lines[line_index + 1].strip()
+                        # If next line starts with a date or year pattern, it's likely part of the marriage
+                        if re.match(r'^(?:on |in |about |circa |c\. )?\d{1,2}\s+[A-Za-z]+\s+\d{4}', next_line) or \
+                           re.match(r'^(?:on |in |about |circa |c\. )?\d{4}', next_line):
+                            marriage = f"{line} {next_line}"
+                            # Skip the next line since we've included it
+                            lines[line_index + 1] = ""
+                            if entry_number == "2":  # Special logging
+                                print(f"  Combined marriage line: {marriage}")
+                        else:
+                            marriage = line
+                            if entry_number == "2":  # Special logging
+                                print(f"  Found marriage line: {marriage}")
+                    else:
+                        marriage = line
+                        if entry_number == "2":  # Special logging
+                            print(f"  Found marriage line: {marriage}")
                 # Process children lines
                 elif in_children:
                     # Check if this line has a Roman numeral prefix (indicating a child entry)
@@ -132,17 +240,28 @@ def parse_genealogy_data(text):
                             # Child with a number ID
                             cid, cname = number_match.groups()
                             children.append((cid.strip(), hyperlink(cname.strip()), True, True))
+                            if entry_number == "2":  # Special logging
+                                print(f"  Child with ID: [{cid.strip()}] {cname.strip()}")
                         else:
-                            # Child without a number ID - still hyperlink the name
-                            name_match = re.match(r'([^\.]+)(?:\.(.*)|$)', child_text.strip())
-                            if name_match:
-                                name_part, desc_part = name_match.groups()
-                                if desc_part:
-                                    children.append(("--", f"{hyperlink(name_part.strip())} {desc_part.strip()}", True, True))
+                            # Child without a number ID - don't hyperlink description parts
+                            if "was born" in child_text or "died" in child_text:
+                                # For entries with descriptions, only hyperlink the name part
+                                name_match = re.match(r'([^\.]+?)(?:\s+was\s+|\s+died\s+)(.*)', child_text)
+                                if name_match:
+                                    name_part, desc_part = name_match.groups()
+                                    children.append(("--", f"{hyperlink(name_part.strip())} was {desc_part.strip()}", True, False))
+                                    if entry_number == "2":  # Special logging
+                                        print(f"  Child with birth/death: {name_part.strip()} | was {desc_part.strip()}")
                                 else:
-                                    children.append(("--", hyperlink(name_part.strip()), True, True))
+                                    # Just add the whole text without hyperlink
+                                    children.append(("--", child_text.strip(), True, False))
+                                    if entry_number == "2":  # Special logging
+                                        print(f"  Child without parsed desc: {child_text.strip()}")
                             else:
-                                children.append(("--", hyperlink(child_text.strip()), True, True))
+                                # For simple name entries
+                                children.append(("--", hyperlink(child_text.strip()), True, False))
+                                if entry_number == "2":  # Special logging
+                                    print(f"  Simple child entry: {child_text.strip()}")
                     else:
                         # This is a continuation of a child description or a malformed entry
                         # Try to detect if it has a number format like "1020 i. and died on..."
@@ -152,11 +271,15 @@ def parse_genealogy_data(text):
                             # This is a special case with a number in parentheses or circle
                             cid, cname = number_in_circle.groups()
                             children.append((cid.strip(), hyperlink(cname.strip()), True, True))
+                            if entry_number == "2":  # Special logging
+                                print(f"  Special child with ID: [{cid.strip()}] {cname.strip()}")
                         else:
                             # Just add this as regular text (not hyperlinked)
                             children.append(("--", line.strip(), False, False))
+                            if entry_number == "2":  # Special logging
+                                print(f"  Non-matched child line: {line.strip()}")
                 # Everything else goes to bio
-                else:
+                elif line.strip():  # Only add non-empty lines
                     bio_lines.append(line)
             
             # If no marriage line was found but there are children, the first bio line might be the marriage line
@@ -166,6 +289,8 @@ def parse_genealogy_data(text):
                     if " married " in line.lower():
                         marriage = line
                         bio_lines.pop(idx)
+                        if entry_number == "2":  # Special logging
+                            print(f"  Found marriage in bio: {marriage}")
                         break
             
             # Join bio lines and format with hyperlinks
@@ -266,7 +391,7 @@ if __name__ == "__main__":
         # Generate output file name based on input file name
         output_file = input_file.replace('raw_input', 'parsed_output').replace('.txt', '.tex')
         if output_file == input_file:
-            output_file = "parsed_output_new.tex"
+            output_file = "parsed_output.tex"
         
         print(f"Reading {input_file}...")
         with open(input_file, "r", encoding="windows-1252", errors="ignore") as file:

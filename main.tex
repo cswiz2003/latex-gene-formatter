@@ -57,6 +57,7 @@
 
 % ======== ENTRY MACROS ========
 \newcommand{\entry}[3]{%
+  \hypertarget{person#1}{}%
   \noindent\badge{#1} \textbf{#2} #3\par\vspace{0.5em}
 }
 
@@ -66,6 +67,14 @@
 
 \newcommand{\childrenheading}{%
   \vspace{0.5em}\noindent\hspace*{2em}\textbf{The child from this marriage was:}\par\vspace{0.5em}
+}
+
+\newcommand{\childrenheadingsingular}{%
+  \vspace{0.5em}\noindent\hspace*{2em}\textbf{The child from this marriage was:}\par\vspace{0.5em}
+}
+
+\newcommand{\childrenheadingplural}{%
+  \vspace{0.5em}\noindent\hspace*{2em}\textbf{Children from this marriage were:}\par\vspace{0.5em}
 }
 
 \newcommand{\childentry}[2]{%
