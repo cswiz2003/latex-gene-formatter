@@ -7,6 +7,7 @@
 \usepackage{tikz}
 \usepackage{fancyhdr}
 
+
 % ======== FONTS ========
 \setmainfont{PublicSans-Regular.ttf}[
   BoldFont=PublicSans-Bold.ttf,
@@ -58,7 +59,7 @@
 % ======== ENTRY MACROS ========
 \newcommand{\entry}[3]{%
   \hypertarget{person#1}{}%
-  \noindent\badge{#1} \textbf{#2} #3\par\vspace{0.5em}
+  \noindent\badge{#1} #2 #3\par\vspace{0.5em}
 }
 
 \newcommand{\marriage}[1]{%
@@ -126,12 +127,12 @@
 % ======== BEGIN DOCUMENT ========
 \begin{document}
 
-\section*{Ancestors of Kellie Dora Rogers}
+\section*{Genealogical Entries}
 \sectiondivider
 
 % ======== DROP CONTENT BELOW ========
 
-\input{parsed_output_new.tex}
+\input{parsed_output7.tex}
 
 % ======== DROP CONTENT ENDS ========
 \end{document}
